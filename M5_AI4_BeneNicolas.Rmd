@@ -1,0 +1,234 @@
+---
+title: Módulo 5 Actividad 4
+subtitle: Modelo Lineal Gaussiano. Mejor especificación del modelo
+author: Nicolás Bene
+output: pdf_document
+---
+
+# Descripción de la tarea
+
+Dentro del paquete de R “MPV”, se encuentra una base de datos de gasto en combustible de diferentes coches con una serie de características:
+* y Miles/gallon. 
+* x1 Displacement (cubic in). 
+* x2 Horsepower (ft-lb). 
+* x3 Torque (ft-lb). 
+* x4 Compression ratio. 
+* x5 Rear axle ratio. 
+* x6 Carburetor (barrels). 
+* x7 No. of transmission speeds. 
+* x8 Overall length (in). 
+* x9 Width (in). 
+* x10 Weight (lb). 
+* x11 Type of transmission (1=automatic, 0=manual).
+
+1) Proponed una especificación que a vuestra intuición sea un buen modelo para explicar la variable y en base a las x que tenemos anteriormente. 
+
+2) Utilizar la técnica STEPWISE para elegir el modelo de tal forma que minimicemos el BIC. 
+
+3) Programad vuestro propio STEPWISE (Backward o Forward) para decidir cuál sería el mejor modelo minimizando la siguiente función:  
+
+![](formula.png)
+
+4) Probad a variar el 0.05 para elegir un modelo según vuestra visión. 
+
+5) En función de los modelos anteriores, ¿cuál de ellos en el caso de que difieran recomendaríais?
+
+
+
+Primero que nada, cargo los paquetes a usar y las librerías que vienen en el script functions, a efectos de usar las funciones vistas durante el curso.
+
+```{r librerias, message=F,warning=F}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(source("../Datos/Functions.R"))
+library(MPV)
+library(DescTools)
+
+#Saco notación científica
+options(scipen=999)
+
+```
+
+Posteriormente cargo la base de datos a utilizar en la tarea, y hago un summary de la misma.
+
+```{r Carga de base de datos}
+
+#Cargo base
+df <- table.b3[-c(23,25),]
+
+#Hago summary
+df %>% 
+      summary
+
+```
+Se observa que son todas variables cuantitativas, aunque la última es una variable binaria que indica el tipo de transmisión. Por otra parte, ninguna presenta valores missing.
+
+# 1) Proponed una especificación que a vuestra intuición sea un buen modelo para explicar la variable y en base a las x que tenemos anteriormente. 
+
+Tal como surge del summary anterior, la variable dependiente que se pretende estimar es continua, por lo tanto pruebo con un modelo lineal gaussiano, empezando con todas las variables X como regresoras.
+
+
+```{r modelo gaussiano saturado}
+
+#Especifico modelo
+modelo_gaussiano_1 <- lm(y~.,data=df)
+
+#Hago summary del mismo
+summary(modelo_gaussiano_1)
+```
+Se observa que tiene un coeficiente de determinación relativamente alto (83,55%), pero ninguna de sus varuables es significativa. Esto es señal de que se puede estar en presencia de multicolinealidad. A continuación se analiza el factor de inflación de varianza (VIF) para corroborarlo.
+
+```{r análisis VIF}
+vif(modelo_gaussiano_1)
+```
+El VIF es bastante elevado en la mayoría de las variables, por lo que hay problemas de multicolinealidad. Existe una alta correlación entre gran parte de las variables regresoras, tal como se muestra a continuación.
+
+```{r matriz de correlación, fig.width=10}
+corrplot::corrplot(cor(df %>% dplyr::select(-y)),
+                   type = "lower",
+                   method = "color", 
+                   addCoef.col =T,
+                   diag = F)
+```
+
+Luego de analizada la multicolinealidad, me aseguro que se cumplan el resto de supuestos del modelo lineal. 
+
+Primero realizo un test de Jarque Bera para comprobar que los residuos tienen una distribución normal.
+
+```{r Test de Jarque Bera}
+jarqueberaTest(modelo_gaussiano_1$residuals)
+```
+El p-valor es ampliamente superior al 5%, por lo que podemos decir que no se rechaza la hipótesis nula, por lo que los residuos tienen una distribución normal.
+
+Posteriormente analizo si los residuos son o no independientes a través de un test de Durbin-Watson.
+
+```{r test Durbin-Watsom}
+dwtest(modelo_gaussiano_1)
+```
+El p-valor es superior al 5%, por lo que podemos decir que no se rechaza la hipótesis nula, con lo cual los residuos son independientes.
+
+
+Por último se analiza si los residuos tienen o no varianza constante (es decir si son homocedásticos o no).
+```{r test Breusch-Pagan}
+bptest(modelo_gaussiano_1)
+```
+Del test de Breusch-Pagan surge un p-valor de 21.02%, por lo que no se rechaza la hipótesis nula de que los residuos sean homocedásticos. Entonces vemos que no habrían problemas de heterocedasticidad.
+
+De los tres tests realizados se verifica que se cumplen los supuestos de un modelo de regresión lineal gaussiano, aunque existen problemas de multicolinealidad.
+
+# 2) Utilizar la técnica STEPWISE para elegir el modelo de tal forma que minimicemos el BIC. 
+Para usar la técnica Stepwise de forma de elegir un modelo que minimice el BIC, es necesario agregar el argumento *k = log(n)* en el comando *step*, siendo *n* la cantidad de observaciones del dataframe.
+
+Utilizaré esta técnica con la dirección "backward".
+
+
+```{r stepwise backwards con criterio BIC}
+
+#Especifico el modelo
+modelo_2 <- step(modelo_gaussiano_1 ,direction = "backward", k= log(nrow(df)), trace = F)
+
+#Hago el summary del modelo
+summary(modelo_2)
+```
+
+El modelo se queda solamente con 3 variables: rear axle ratio (x5),  overall length (x8) y Weight (x10). El R cuadrado es del 80,35% y Las variables son todas significativas (el p-valor de x5 es de 5.02%, por lo que se puede tomar como significativa).
+
+# 3) Programad vuestro propio STEPWISE (Backward o Forward) para decidir cuál sería el mejor modelo minimizando la siguiente función:  
+
+![](formula.png)
+
+Procedo a programar una función STEPWISE "Backward" usando la fórmula anteriormente. El sumando izquierdo de la fórmula es la U de Theil, que puede ser calculada mediante la función *TheilU* del paquete *DescTools*, usando el argumento *type=1*, tal como se expone a continuación.
+
+
+```{r U de Theil de modelo 1, warning=F}
+
+#U de Theil
+TheilU(df$y,modelo_gaussiano_1$fitted.values,type = 1)
+
+#Calculada especificando la f´romula
+(((sum((df$y-modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5)/((((sum((df$y)**2))/nrow(df))**0.5)+(((sum((modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5))
+
+```
+Da exactamente lo mismo, por lo que se usa en la programación la función **TheilU** para simplificar. Primero se crea una función que calcule la fórmula completa solicitada (sumando U de Theil más el 0.05 por la cantidad de variables), a la cual le llamo *k_Thail*. Al coeficiente 0.05 que multiplica al número de variables lo nombro k, y lo dejo parametrizado a efectos de poder modificarlo en el ejercicio siguiente. Lo dejo con 0.05 por defecto, pero con la posibilidad de cambiarlo.
+
+```{r función k_Thail}
+k_Thail <- function(modelo, k = 0.05,...){
+
+#Calculo cantidad de variables regresoras del modelo
+cant_variables <- ncol(modelo$model)-1    
+
+return(
+      TheilU(
+            #Tomo la y
+            modelo$model[,1],
+            #tomo los fitted values del modelo
+            modelo$fitted.values, 
+            type = 1
+            )+k*cant_variables
+      
+)
+}
+```
+
+Posteriormente es necesario que se realice el loop hasta alcanzar un mínimo local. Al ser backwards, si al retirar una variable, este coeficiente aumenta, el algoritmo pararía ahí. Llamaré a la función 
+
+```{r}
+step_Thail <- function(modelo, k = 0.05, ...){
+
+ data <-eval(modelo$call$data)
+      #Calculo el k_thail con el modelo actual
+      valor_Thail_actual <- k_Thail(modelo,k)    
+      #Para empezar le resto 1 para asegurarme que sea menor y haga la primera iteración
+      valor_Thail_nuevo <- valor_Thail_actual-1
+      
+      #Mientras el k Thail sea menor al del modelo anterior, y si hay por lo menos
+      #1 variable, entonces sigue haciendo el loop hasta encontrar un óptimo local
+      while (valor_Thail_nuevo<valor_Thail_actual && ncol(modelo$model)>=3) {
+            valor_Thail_actual <- k_Thail(modelo,k)       
+            modelo_sin_var <- list()
+            valor_Thail_nuevo <-c()
+            
+            for(i in colnames(modelo$model[,-1])){
+            #El nombre de cada modelo es el nombre de la variable que saco
+            modelo_sin_var[[i]] <- lm(y~.,
+                                      data=data %>% 
+                                            dplyr::select(-i) 
+            )
+            valor_Thail_nuevo[i] <- k_Thail(modelo_sin_var[[i]],k) 
+            
+                  
+            
+            }
+            
+            #Variable que saco
+            variable_a_sacar <-  names(which.min(valor_Thail_nuevo))
+
+            #Me quedo con este modelo y calculo nuevo Thail
+            modelo <- modelo_sin_var[[variable_a_sacar ]]
+            
+            #Saco la variable del dataframe
+            data <- data %>% 
+                  dplyr::select(-variable_a_sacar)
+      
+            
+            
+      }
+
+return(modelo)      
+}
+
+
+```
+
+
+```{r}
+modelo_con_step_Thail <- step_Thail(modelo_gaussiano_1)
+
+summary(modelo_con_step_Thail)
+```
+# 4 
+
+```{r}
+modelo_con_step_Thail2 <- step_Thail(modelo_gaussiano_1,k=0.003)
+
+summary(modelo_con_step_Thail2)
+```
