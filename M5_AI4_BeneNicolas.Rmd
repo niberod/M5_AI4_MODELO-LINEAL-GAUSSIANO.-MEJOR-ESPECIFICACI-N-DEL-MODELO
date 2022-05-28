@@ -41,7 +41,7 @@ Primero que nada, cargo los paquetes a usar y las librerías que vienen en el sc
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(source("../Datos/Functions.R"))
 library(MPV)
-library(DescTools)
+suppressPackageStartupMessages(library(DescTools))
 
 #Saco notación científica
 options(scipen=999)
@@ -136,22 +136,34 @@ El modelo se queda solamente con 3 variables: rear axle ratio (x5),  overall len
 
 ![](formula.png)
 
-Procedo a programar una función STEPWISE "Backward" usando la fórmula anteriormente. El sumando izquierdo de la fórmula es la U de Theil, que puede ser calculada mediante la función *TheilU* del paquete *DescTools*, usando el argumento *type=1*, tal como se expone a continuación.
+Procedo a programar una función STEPWISE "Backward" usando la fórmula expuesta anteriormente. 
+
+Al analizar la fórmula se observa que el sumando izquierdo de la fórmula es la U de Theil, que en este caso se estaría usando como forma de ver que tan bien ajusta el modelo a los datos reales. La U de Theil asume valores entre 0 y 1, y cuánto más cercano a 0 esté el valor, mejor predecirá el modelo, y por otro lado, cuánto más cercano a 1, menor es su capacidad de predicción. Por lo tanto nos interesa que este sumando sea lo menor posible. El tema es que podemos vernos tentados de agregar variables no relevantes resultando en un modelo que no sea parsimonioso con tal de que disminuya este valor. Para evitar esto, es que en la fórmula se agrega un segundo sumando que castiga la incorporación de nuevas variables, multiplicando la cantidad de variables del modelo por un factor (que denominaré k) que en este caso es de 0.05. Como se pretende minimizar la suma de las dos expresiones mencionadas, entonces la fórmula castiga la incorporación de muchas variables, buscando entonces un equilibrio entre ajuste y parsimonia del modelo, de forma similar a como lo hacen el AIC y el BIC.
+
+A la fórmula expuesta, a efectos de simplificar, la llamaré K de Theil. 
+
+Cabe destacar que el primer sumando, que es la U de Theil, puede ser calculada mediante la función *TheilU* del paquete *DescTools*, usando el argumento *type=1*, tal como se expone a continuación.
 
 
 ```{r U de Theil de modelo 1, warning=F}
 
-#U de Theil
+#Comparo función de U de Theil con la aplicación directa del sumando izquierdo la fórmula
+
+#U de Theil usando función
 TheilU(df$y,modelo_gaussiano_1$fitted.values,type = 1)
 
-#Calculada especificando la f´romula
+#U de Theil calculada especificando la fórmula
 (((sum((df$y-modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5)/((((sum((df$y)**2))/nrow(df))**0.5)+(((sum((modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5))
 
 ```
-Da exactamente lo mismo, por lo que se usa en la programación la función **TheilU** para simplificar. Primero se crea una función que calcule la fórmula completa solicitada (sumando U de Theil más el 0.05 por la cantidad de variables), a la cual le llamo *k_Thail*. Al coeficiente 0.05 que multiplica al número de variables lo nombro k, y lo dejo parametrizado a efectos de poder modificarlo en el ejercicio siguiente. Lo dejo con 0.05 por defecto, pero con la posibilidad de cambiarlo.
+De los comandos precedentes se obseva que la función TheilU calcula correctamente el primer sumando de la fórmula, por lo que se usa en la programación la función **TheilU** para simplificar. 
 
-```{r función k_Thail}
-k_Thail <- function(modelo, k = 0.05,...){
+A efectos de programar un algoritmo stepwise con la fórmula solicitada, primero se crea una función que calcule dicha fórmula (sumando U de Theil más el 0.05 por la cantidad de variables), a la cual le llamo *k_Theil*. Al coeficiente 0.05 que multiplica al número de variables lo nombro k, y lo dejo parametrizado a efectos de poder modificarlo en el ejercicio siguiente. Lo dejo con 0.05 por defecto, pero con la posibilidad de cambiarlo.
+
+```{r función k_Theil}
+
+#Defino función k_Theil que calcula la fórmula solicitada
+k_Theil <- function(modelo, k = 0.05,...){
 
 #Calculo cantidad de variables regresoras del modelo
 cant_variables <- ncol(modelo$model)-1    
@@ -169,23 +181,65 @@ return(
 }
 ```
 
-Posteriormente es necesario que se realice el loop hasta alcanzar un mínimo local. Al ser backwards, si al retirar una variable, este coeficiente aumenta, el algoritmo pararía ahí. Llamaré a la función 
-
-```{r}
-step_Thail <- function(modelo, k = 0.05, ...){
-
- data <-eval(modelo$call$data)
-      #Calculo el k_thail con el modelo actual
-      valor_Thail_actual <- k_Thail(modelo,k)    
-      #Para empezar le resto 1 para asegurarme que sea menor y haga la primera iteración
-      valor_Thail_nuevo <- valor_Thail_actual-1
+Posteriormente programo el algoritmo que empezará con el modelo que se pretende optimizar, que debería ser uno saturado con todas las variables. Si al número de variables del modelo que se inserta en la función le llamamos n, entonces el algoritmo ejecutaría los siguientes pasos:
+      * 1) Calcula la K de Theil del modelo saturado. 
       
-      #Mientras el k Thail sea menor al del modelo anterior, y si hay por lo menos
-      #1 variable, entonces sigue haciendo el loop hasta encontrar un óptimo local
-      while (valor_Thail_nuevo<valor_Thail_actual && ncol(modelo$model)>=3) {
-            valor_Thail_actual <- k_Thail(modelo,k)       
+      * 2) Especifica n modelos con n-1 variables cada una, sacando de a una las variables regresoras del modelo saturado ingresado en la función.
+      
+      * 3) Calcula la K de Theil de cada uno de esos n modelos y se queda con el modelo que tenga la mínima K de Theil. 
+      
+      * 4) Compara la K de Theil obtenida en el punto anterior con la K de Theil del modelo saturado calculada en 1. 
+      
+      * 5) Si la K de Theil del modelo obtenido en 3 es menor que la K de Theil, entonces con este nuevo modelo se realizan los pasos 2 a 4, utilizando como n la nueva cantidad de variables del modelo obtenido en el punto 3.   
+      
+      * 6) Se continúa iterando hasta que la K de Theil obtenida con un modelo sea menor que la que se obtendría sacando una variable más, o hasta que no queden variables regresoras por eliminar del modelo (es decir que quede un modelo con una sola variable independiente), lo que suceda primero.  
+
+Se observa que, del procedimiento expresado, se está obteniendo un óptimo local, ya que no se prueban todas las combinaciones de modelos, sino que se saca una, se obtiene el valor del parámetro K de Theil, y luego se saca otra además de esa. Este óptimo local no necesariamente tiene que ser un óptimo global, el cuál surgiría si se hicieran todas las combinaciones posibles de modelos. No se hace esto último debido a los costos computacionales que implica.
+
+A continuación expongo la programación de esta función a la que denominaré *Step_Theil* que tiene como argumentos al modelo al que se le quiere aplicar el logaritmo, y el k que se utiliza para penalizar la incorporación de variables. Este k es 0.05 por defecto, pero puede cambiarse.
+
+```{r programación de Step_Theil}
+
+#Creo la función
+step_Theil <- function(modelo, k = 0.05, ...){
+      
+      #Obtengo el dataframe con los datos con el que se elaboró el modelo
+      data <-eval(modelo$call$data)
+      
+      #Calculo el k_Theil con el modelo actual
+      valor_Theil_actual <- k_Theil(modelo,k)  
+      
+      #Creo la variable de k de Theil del modelo a comparar con la que se analizará el loop.
+      #Para empezar le resto 1 al valor_Theil_actua para asegurarme que sea menor y haga la
+      #primera iteración, ya que todavía no hay ningún modelo nuevo. En las siguientes
+      #iteraciones este valor va a ser el K de Theil con el modelo al que se le sacó una
+      #variable con respecto al actual.
+      valor_Theil_nuevo <- valor_Theil_actual-1
+      
+      #############Hago el loop###########################################################
+      #Mientras el k Theil sea menor al del modelo anterior, y si hay por lo menos
+      #1 variable regresora, entonces sigue haciendo el loop hasta encontrar un óptimo
+      #local. La comparación ncol(modelo$model)>=3 es para asegurarse que itere siempre que
+      #haya por lo menos dos variables regresoras, el 3 es porque trambién está el
+      #intercepto.
+      
+      while (valor_Theil_nuevo<valor_Theil_actual && ncol(modelo$model)>=3) {
+            
+            #Calculo K de Theil en cada iteración del modelo
+            valor_Theil_actual <- k_Theil(modelo,k)       
+            
+            #Creo una lista donde voy a poner cada uno de los n modelos con n-1 variables
             modelo_sin_var <- list()
-            valor_Thail_nuevo <-c()
+            
+            #Creo un vector con los K de Theil de cada uno de los modelos sin 1 variable
+            #menos, a efectos de quedarme con el que tenga menor K de Theil.
+            valor_Theil_nuevo <-c()
+            
+            
+            
+            ####Loop para obtener cada uno de los n modelos con n-1 variables########
+            #Especifico cada uno de los modelos con una variable menos, y luego calculo
+            #su K de Theil corresponidente
             
             for(i in colnames(modelo$model[,-1])){
             #El nombre de cada modelo es el nombre de la variable que saco
@@ -193,16 +247,18 @@ step_Thail <- function(modelo, k = 0.05, ...){
                                       data=data %>% 
                                             dplyr::select(-i) 
             )
-            valor_Thail_nuevo[i] <- k_Thail(modelo_sin_var[[i]],k) 
+            
+            #Calculo el valor de K dhe Theil de los modelos sin una variable menos
+            valor_Theil_nuevo[i] <- k_Theil(modelo_sin_var[[i]],k) 
             
                   
             
             }
             
-            #Variable que saco
-            variable_a_sacar <-  names(which.min(valor_Thail_nuevo))
+            #Variable que saco debido a que el modelo sin la misma tiene el menor k de Theil
+            variable_a_sacar <-  names(which.min(valor_Theil_nuevo))
 
-            #Me quedo con este modelo y calculo nuevo Thail
+            #Me quedo con este modelo y calculo nuevo Theil
             modelo <- modelo_sin_var[[variable_a_sacar ]]
             
             #Saco la variable del dataframe
@@ -212,23 +268,76 @@ step_Thail <- function(modelo, k = 0.05, ...){
             
             
       }
-
-return(modelo)      
+      
+      #El resultado es el modelo con óptimo local de K de Theil
+      return(modelo)      
 }
 
 
 ```
 
+Una vez programada la función, resta correr el algoritmo stepwise con la fórmula solicitada, y ver cuál sería el mejor modelo según el mismo. Para ello se parte del modelo gaussiano con todas las variables calculado en el ejercicio 1, y se corre con el k por defecto que es 0.05.
 
-```{r}
-modelo_con_step_Thail <- step_Thail(modelo_gaussiano_1)
+```{r modelo con Step Thail, warning=F,message=F}
 
-summary(modelo_con_step_Thail)
+#Especifico el modelo
+modelo_con_step_Theil <- step_Theil(modelo_gaussiano_1)
+
+#Realizo el summary 
+summary(modelo_con_step_Theil)
 ```
-# 4 
+Se observa que el modelo que obtiene un óptimo local de K de Thail es uno con una sola variable regresora, que es x10, la cual corresponde a Weight (lb), es decir el peso en libras del auto.
 
-```{r}
-modelo_con_step_Thail2 <- step_Thail(modelo_gaussiano_1,k=0.003)
+Analizando la fórmula que se busca minimizar, se observa que en la misma, en el segundo sumando se castiga la incorporación de más variables independientes, y el factor de castigo es el k mencionado que es de 0.05. Teniendo en cuenta que la U de Theil (sumando izquierdo de la fórmula) es un número entre 0 y 1, un coeficiente de 0.05 para castigar la incorporación de una variable extra quizás resulte muy elevado, ya que se busca minimizar el valor de la fórmula. Lo que está sucediendo es que la reducción de la U de Thail (o sea la majora en la capacidad predictiva del modelo) con la incorporación de una variable al modelo no compensa el castigo por agregarla. Por lo tanto con dicho coeficiente el algoritmo llega a un mínimo sacando todas las variables regresoras salvo una. Es por esto que en el próximo ejercicio se analizan diversos valores de k, el cuál fue parametrizado en la función step_Theil.
 
-summary(modelo_con_step_Thail2)
+# 4) Probad a variar el 0.05 para elegir un modelo según vuestra visión.
+
+En el ejercicio anterior se vió que con 0.05 se obtenía un modelo con 1 variable sola. Como se busca minimizar el K de Thail, dicho coeficiente está castigando en demasía la incorporación de nuevas variables. No utilizo k mayores a 0.05 porque eso implicaría un mahor castigo que el actual, y por lo tanto sé que se obtendría el mismo modelo con una sola variable regresora que es x10, ya que el algoritmo que programé para cuando solo queda una variable independiente. Intentaré con valores de k menores, especificamente con: 0.01, 0.005 y 0.0029.
+
+```{r step_Theil con k=0.01}
+
+#k=0.01
+
+#Especifico modelo
+modelo_con_step_Theil2 <- step_Theil(modelo_gaussiano_1,k=0.01)
+
+#Realizo el summary
+summary(modelo_con_step_Theil2)
 ```
+Se observa que aún bajando el k de 0.05 a 0.01, el modelo resultante sigue siendo de una sola variable, por lo que es necesario reducir aún más el castigo de la incorporación de las nuevas variables. A continuación se prueba con k=0.005.
+
+
+```{r step_Theil con k=0.005}
+
+#k=0.005
+
+#Especifico modelo
+modelo_con_step_Theil3 <- step_Theil(modelo_gaussiano_1, k=0.005)
+
+#Realizo el summary
+summary(modelo_con_step_Theil3)
+```
+
+Al reducir el k a 0.005 se castiga menos el agregar nuevas variables independientes, y se obtiene entonces un modelo con 3 variables regresoras: x5, x8 y x10. Son las mismas variables regresoras, y el mismo modelo que se obtuvo en el ejercicio 2 usando stepwise backwards con el criterio BIC.
+
+Por último, pruebo bajar aún más el k, usando 0.0029
+
+```{r step_Theil con k=0.029}
+
+#k=0.0029
+
+#Especifico modelo
+modelo_con_step_Theil3 <- step_Theil(modelo_gaussiano_1,k=0.0029)
+
+#Realizo el summary
+summary(modelo_con_step_Theil3)
+```
+
+En este caso, al disminuir aún más el castigo por cada variable, se obtiene un modelo con todas las variables excepto una que es la x11.
+
+# 5) En función de los modelos anteriores, ¿cuál de ellos en el caso de que difieran recomendaríais?
+
+Si se pretende buscar un modelo con cierta capacidad predictiva pero a la vez que sea parsimonioso y no contenga un número elevado de variables innecesarias que no aporten una mejora significativa a la bondad de ajuste, entonces lo ideal sería elegir un modelo según parámetros que busquen un equilibrio entre los mismos. Eso es exactamente lo que se hizo en este ejercicio, y para ello se usaron dos parámetros: BIC y la K de Theil expuesta en la fórmula del ejercicio 3. Se observó que usando el stepwise backwards con el criterio BIC y el mismo algoritmo pero con la K de Theil con un k de 0.005 se obtiene el mismo modelo con 3 variables: rear axle ratio (x5),  overall length (x8) y Weight (x10). Teniendo estos dos criterios que llevan al mismo modelo, y en función de los datos proporcionados por el ejercicio, parecería que este es el mejor modelo que se podría recomendar, si biene existe espacio a mejorar, ya que el coeficiente de determinación es del 80,35%.
+
+No obstante también sería importante analizar el modelo con conocimiento del negocio, ver si es posible obtener datos de otras variables que sean relavantes y no estén en el dataset, así como realizar cross validation del modelo.
+
