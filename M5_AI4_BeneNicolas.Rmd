@@ -75,14 +75,14 @@ modelo_gaussiano_1 <- lm(y~.,data=df)
 #Hago summary del mismo
 summary(modelo_gaussiano_1)
 ```
-Se observa que tiene un coeficiente de determinación relativamente alto (83,55%), pero ninguna de sus varuables es significativa. Esto es señal de que se puede estar en presencia de multicolinealidad. A continuación se analiza el factor de inflación de varianza (VIF) para corroborarlo.
+Se observa que tiene un coeficiente de determinación relativamente alto (83,55%), pero ninguna de sus variables es significativa. Esto es señal de que se puede estar en presencia de multicolinealidad. A continuación se analiza el factor de inflación de varianza (VIF) para corroborarlo.
 
 ```{r análisis VIF}
 vif(modelo_gaussiano_1)
 ```
-El VIF es bastante elevado en la mayoría de las variables, por lo que hay problemas de multicolinealidad. Existe una alta correlación entre gran parte de las variables regresoras, tal como se muestra a continuación.
+El VIF es bastante elevado en la mayoría de las variables (más de 5, e incluso más de 10), por lo que hay problemas de multicolinealidad. Existe una alta correlación entre gran parte de las variables regresoras, tal como se muestra a continuación.
 
-```{r matriz de correlación, fig.width=10}
+```{r matriz de correlación, fig.width=10, fig.height=5}
 corrplot::corrplot(cor(df %>% dplyr::select(-y)),
                    type = "lower",
                    method = "color", 
@@ -97,7 +97,7 @@ Primero realizo un test de Jarque Bera para comprobar que los residuos tienen un
 ```{r Test de Jarque Bera}
 jarqueberaTest(modelo_gaussiano_1$residuals)
 ```
-El p-valor es ampliamente superior al 5%, por lo que podemos decir que no se rechaza la hipótesis nula, por lo que los residuos tienen una distribución normal.
+El p-valor es ampliamente superior al 5%, entonces podemos decir que no se rechaza la hipótesis nula, y por lo tanto los residuos tienen una distribución normal.
 
 Posteriormente analizo si los residuos son o no independientes a través de un test de Durbin-Watson.
 
@@ -108,6 +108,7 @@ El p-valor es superior al 5%, por lo que podemos decir que no se rechaza la hip�
 
 
 Por último se analiza si los residuos tienen o no varianza constante (es decir si son homocedásticos o no).
+
 ```{r test Breusch-Pagan}
 bptest(modelo_gaussiano_1)
 ```
@@ -130,7 +131,7 @@ modelo_2 <- step(modelo_gaussiano_1 ,direction = "backward", k= log(nrow(df)), t
 summary(modelo_2)
 ```
 
-El modelo se queda solamente con 3 variables: rear axle ratio (x5),  overall length (x8) y Weight (x10). El R cuadrado es del 80,35% y Las variables son todas significativas (el p-valor de x5 es de 5.02%, por lo que se puede tomar como significativa).
+El modelo se queda solamente con 3 variables: rear axle ratio (x5),  overall length (x8) y Weight (x10). El R cuadrado es del 80,35% y las variables son todas significativas (el p-valor de x5 es de 5.02%, por lo que se puede tomar como significativa).
 
 # 3) Programad vuestro propio STEPWISE (Backward o Forward) para decidir cuál sería el mejor modelo minimizando la siguiente función:  
 
@@ -138,7 +139,7 @@ El modelo se queda solamente con 3 variables: rear axle ratio (x5),  overall len
 
 Procedo a programar una función STEPWISE "Backward" usando la fórmula expuesta anteriormente. 
 
-Al analizar la fórmula se observa que el sumando izquierdo de la fórmula es la U de Theil, que en este caso se estaría usando como forma de ver que tan bien ajusta el modelo a los datos reales. La U de Theil asume valores entre 0 y 1, y cuánto más cercano a 0 esté el valor, mejor predecirá el modelo, y por otro lado, cuánto más cercano a 1, menor es su capacidad de predicción. Por lo tanto nos interesa que este sumando sea lo menor posible. El tema es que podemos vernos tentados de agregar variables no relevantes resultando en un modelo que no sea parsimonioso con tal de que disminuya este valor. Para evitar esto, es que en la fórmula se agrega un segundo sumando que castiga la incorporación de nuevas variables, multiplicando la cantidad de variables del modelo por un factor (que denominaré k) que en este caso es de 0.05. Como se pretende minimizar la suma de las dos expresiones mencionadas, entonces la fórmula castiga la incorporación de muchas variables, buscando entonces un equilibrio entre ajuste y parsimonia del modelo, de forma similar a como lo hacen el AIC y el BIC.
+Al analizar la fórmula se observa que el sumando izquierdo de la fórmula es la U de Theil, que en este caso se estaría usando como forma de ver que tan bien ajusta el modelo a los datos reales. La U de Theil asume valores entre 0 y 1, y cuánto más cercano a 0 esté el valor mejor predecirá el modelo, y por otro lado cuánto más cerca esté de 1 menor será la bondad de ajuste del mismo. Por lo tanto nos interesa que este sumando sea lo menor posible. El tema es que podemos vernos tentados de agregar variables no relevantes, resultando en un modelo que no sea parsimonioso, con tal de que disminuya este valor. Para evitar esto, es que en la fórmula se agrega un segundo sumando que castiga la incorporación de nuevas variables, multiplicando la cantidad de variables del modelo por un factor (que denominaré k) que en este caso es de 0.05. Como se pretende minimizar la suma de las dos expresiones mencionadas, entonces la fórmula castiga la incorporación de muchas variables, buscando entonces un equilibrio entre bondad de ajuste y parsimonia del modelo, de forma similar a como lo hacen el AIC y el BIC.
 
 A la fórmula expuesta, a efectos de simplificar, la llamaré K de Theil. 
 
@@ -153,7 +154,8 @@ Cabe destacar que el primer sumando, que es la U de Theil, puede ser calculada m
 TheilU(df$y,modelo_gaussiano_1$fitted.values,type = 1)
 
 #U de Theil calculada especificando la fórmula
-(((sum((df$y-modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5)/((((sum((df$y)**2))/nrow(df))**0.5)+(((sum((modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5))
+(((sum((df$y-modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5)/((((sum((df$y)**2))/
+nrow(df))**0.5)+(((sum((modelo_gaussiano_1$fitted.values)**2))/nrow(df))**0.5))
 
 ```
 De los comandos precedentes se obseva que la función TheilU calcula correctamente el primer sumando de la fórmula, por lo que se usa en la programación la función **TheilU** para simplificar. 
@@ -165,38 +167,39 @@ A efectos de programar un algoritmo stepwise con la fórmula solicitada, primero
 #Defino función k_Theil que calcula la fórmula solicitada
 k_Theil <- function(modelo, k = 0.05,...){
 
-#Calculo cantidad de variables regresoras del modelo
-cant_variables <- ncol(modelo$model)-1    
-
-return(
-      TheilU(
-            #Tomo la y
-            modelo$model[,1],
-            #tomo los fitted values del modelo
-            modelo$fitted.values, 
-            type = 1
-            )+k*cant_variables
+      #Calculo cantidad de variables regresoras del modelo
+      cant_variables <- ncol(modelo$model)-1    
       
-)
+      return(
+            TheilU(
+                  #Tomo la y
+                  modelo$model[,1],
+                  #tomo los fitted values del modelo
+                  modelo$fitted.values, 
+                  type = 1
+                  )+k*cant_variables
+            
+      )
 }
 ```
 
-Posteriormente programo el algoritmo que empezará con el modelo que se pretende optimizar, que debería ser uno saturado con todas las variables. Si al número de variables del modelo que se inserta en la función le llamamos n, entonces el algoritmo ejecutaría los siguientes pasos:
-      * 1) Calcula la K de Theil del modelo saturado. 
-      
-      * 2) Especifica n modelos con n-1 variables cada una, sacando de a una las variables regresoras del modelo saturado ingresado en la función.
-      
-      * 3) Calcula la K de Theil de cada uno de esos n modelos y se queda con el modelo que tenga la mínima K de Theil. 
-      
-      * 4) Compara la K de Theil obtenida en el punto anterior con la K de Theil del modelo saturado calculada en 1. 
-      
-      * 5) Si la K de Theil del modelo obtenido en 3 es menor que la K de Theil, entonces con este nuevo modelo se realizan los pasos 2 a 4, utilizando como n la nueva cantidad de variables del modelo obtenido en el punto 3.   
-      
-      * 6) Se continúa iterando hasta que la K de Theil obtenida con un modelo sea menor que la que se obtendría sacando una variable más, o hasta que no queden variables regresoras por eliminar del modelo (es decir que quede un modelo con una sola variable independiente), lo que suceda primero.  
+Posteriormente programo el algoritmo que empezará con el modelo que se pretende optimizar, que debería ser uno saturado con todas las variables. Si al número de variables del modelo le llamamos n, entonces el algoritmo ejecutaría los siguientes pasos:
 
-Se observa que, del procedimiento expresado, se está obteniendo un óptimo local, ya que no se prueban todas las combinaciones de modelos, sino que se saca una, se obtiene el valor del parámetro K de Theil, y luego se saca otra además de esa. Este óptimo local no necesariamente tiene que ser un óptimo global, el cuál surgiría si se hicieran todas las combinaciones posibles de modelos. No se hace esto último debido a los costos computacionales que implica.
+* 1) Calcula la K de Theil del modelo saturado. 
+      
+* 2) Especifica n modelos con n-1 variables cada una, sacando de a una las variables regresoras del modelo saturado ingresado en la función.
+      
+* 3) Calcula la K de Theil de cada uno de esos n modelos y se queda con el modelo que tenga la mínima K de Theil. 
+      
+* 4) Compara la K de Theil obtenida en el punto anterior con la K de Theil del modelo saturado calculada en 1. 
+      
+* 5) Si la K de Theil del modelo obtenido en 3 es menor que la K de Theil del modelo con todas las variables (calculada en 1), entonces con este nuevo modelo se realizan nuevamente los pasos 2 a 4, utilizando como n la nueva cantidad de variables del modelo obtenido en el punto 3.   
+      
+* 6) Se continúa iterando hasta que la K de Theil obtenida con un modelo sea menor que la que se obtendría sacando una variable más, o hasta que no queden variables regresoras por eliminar del modelo (es decir que quede un modelo con una sola variable independiente), lo que suceda primero.  
 
-A continuación expongo la programación de esta función a la que denominaré *Step_Theil* que tiene como argumentos al modelo al que se le quiere aplicar el logaritmo, y el k que se utiliza para penalizar la incorporación de variables. Este k es 0.05 por defecto, pero puede cambiarse.
+Se observa que, del procedimiento expresado, se está obteniendo un óptimo local, ya que no se prueban todas las combinaciones de modelos, sino que se saca una variable, se obtiene el valor del parámetro K de Theil, y luego se saca otra además de esa. Este óptimo local no necesariamente tiene que ser un óptimo global, el cuál surgiría si se hicieran todas las combinaciones posibles de modelos. No se hace esto último debido a los costos computacionales que implicaría.
+
+A continuación expongo la programación de esta función a la que denominaré *step_Theil* que tiene como argumentos al modelo al que se le quiere aplicar el algoritmo, y el k que se utiliza para penalizar la incorporación de variables. Este k es 0.05 por defecto, pero puede cambiarse.
 
 ```{r programación de Step_Theil}
 
@@ -209,18 +212,18 @@ step_Theil <- function(modelo, k = 0.05, ...){
       #Calculo el k_Theil con el modelo actual
       valor_Theil_actual <- k_Theil(modelo,k)  
       
-      #Creo la variable de k de Theil del modelo a comparar con la que se analizará el loop.
-      #Para empezar le resto 1 al valor_Theil_actua para asegurarme que sea menor y haga la
-      #primera iteración, ya que todavía no hay ningún modelo nuevo. En las siguientes
-      #iteraciones este valor va a ser el K de Theil con el modelo al que se le sacó una
-      #variable con respecto al actual.
+      #Creo la variable de k de Theil del modelo a comparar con la que se analizará el 
+      #loop. Para empezar le resto 1 al valor_Theil_actual para asegurarme que sea menor 
+      #y haga la primera iteración, ya que todavía no hay ningún modelo nuevo. En las
+      #siguientes iteraciones este valor va a ser el K de Theil con el modelo al que se 
+      #le sacó una variable con respecto al actual.
       valor_Theil_nuevo <- valor_Theil_actual-1
       
-      #############Hago el loop###########################################################
+      #############Hago el loop#########################################################
       #Mientras el k Theil sea menor al del modelo anterior, y si hay por lo menos
       #1 variable regresora, entonces sigue haciendo el loop hasta encontrar un óptimo
-      #local. La comparación ncol(modelo$model)>=3 es para asegurarse que itere siempre que
-      #haya por lo menos dos variables regresoras, el 3 es porque trambién está el
+      #local. La comparación ncol(modelo$model)>=3 es para asegurarse que itere siempre 
+      #que haya por lo menos dos variables regresoras, el 3 es porque trambién está el
       #intercepto.
       
       while (valor_Theil_nuevo<valor_Theil_actual && ncol(modelo$model)>=3) {
@@ -236,12 +239,12 @@ step_Theil <- function(modelo, k = 0.05, ...){
             valor_Theil_nuevo <-c()
             
             
-            
             ####Loop para obtener cada uno de los n modelos con n-1 variables########
             #Especifico cada uno de los modelos con una variable menos, y luego calculo
             #su K de Theil corresponidente
             
             for(i in colnames(modelo$model[,-1])){
+                  
             #El nombre de cada modelo es el nombre de la variable que saco
             modelo_sin_var[[i]] <- lm(y~.,
                                       data=data %>% 
@@ -255,11 +258,13 @@ step_Theil <- function(modelo, k = 0.05, ...){
             
             }
             
-            #Variable que saco debido a que el modelo sin la misma tiene el menor k de Theil
+            #Variable que saco debido a que el modelo sin la misma tiene el menor k 
+            #de Theil
             variable_a_sacar <-  names(which.min(valor_Theil_nuevo))
 
-            #Me quedo con este modelo y calculo nuevo Theil
+            #Me quedo con este modelo y calculo nuevo k de Theil
             modelo <- modelo_sin_var[[variable_a_sacar ]]
+            valor_Theil_nuevo <-  k_Theil(modelo,k) 
             
             #Saco la variable del dataframe
             data <- data %>% 
@@ -278,7 +283,7 @@ step_Theil <- function(modelo, k = 0.05, ...){
 
 Una vez programada la función, resta correr el algoritmo stepwise con la fórmula solicitada, y ver cuál sería el mejor modelo según el mismo. Para ello se parte del modelo gaussiano con todas las variables calculado en el ejercicio 1, y se corre con el k por defecto que es 0.05.
 
-```{r modelo con Step Thail, warning=F,message=F}
+```{r modelo con Step Theil, warning=F,message=F}
 
 #Especifico el modelo
 modelo_con_step_Theil <- step_Theil(modelo_gaussiano_1)
@@ -286,15 +291,15 @@ modelo_con_step_Theil <- step_Theil(modelo_gaussiano_1)
 #Realizo el summary 
 summary(modelo_con_step_Theil)
 ```
-Se observa que el modelo que obtiene un óptimo local de K de Thail es uno con una sola variable regresora, que es x10, la cual corresponde a Weight (lb), es decir el peso en libras del auto.
+Se observa que el modelo que obtiene un óptimo local de K de Theil es uno con una sola variable regresora, que es x10, la cual corresponde a Weight (lb), es decir el peso en libras del auto.
 
-Analizando la fórmula que se busca minimizar, se observa que en la misma, en el segundo sumando se castiga la incorporación de más variables independientes, y el factor de castigo es el k mencionado que es de 0.05. Teniendo en cuenta que la U de Theil (sumando izquierdo de la fórmula) es un número entre 0 y 1, un coeficiente de 0.05 para castigar la incorporación de una variable extra quizás resulte muy elevado, ya que se busca minimizar el valor de la fórmula. Lo que está sucediendo es que la reducción de la U de Thail (o sea la majora en la capacidad predictiva del modelo) con la incorporación de una variable al modelo no compensa el castigo por agregarla. Por lo tanto con dicho coeficiente el algoritmo llega a un mínimo sacando todas las variables regresoras salvo una. Es por esto que en el próximo ejercicio se analizan diversos valores de k, el cuál fue parametrizado en la función step_Theil.
+Analizando la fórmula que se busca minimizar, se mencionó anteriormente que en el segundo sumando se castiga la incorporación de más variables independientes, y el factor de castigo es el k mencionado que es de 0.05. Teniendo en cuenta que la U de Theil (sumando izquierdo de la fórmula) es un número entre 0 y 1, un coeficiente de 0.05 para castigar la incorporación de una variable extra quizás resulte muy elevado, ya que se busca minimizar el valor de la fórmula. Lo que está sucediendo es que la reducción de la U de Theil (o sea la mejora en la capacidad predictiva del modelo) con la incorporación de una variable al modelo no compensa el castigo por agregarla. Por lo tanto con dicho coeficiente el algoritmo llega a un mínimo sacando todas las variables regresoras salvo una. Es por esto que en el próximo ejercicio se analizan diversos valores de k, el cuál fue parametrizado en la función step_Theil.
 
 # 4) Probad a variar el 0.05 para elegir un modelo según vuestra visión.
 
-En el ejercicio anterior se vió que con 0.05 se obtenía un modelo con 1 variable sola. Como se busca minimizar el K de Thail, dicho coeficiente está castigando en demasía la incorporación de nuevas variables. No utilizo k mayores a 0.05 porque eso implicaría un mahor castigo que el actual, y por lo tanto sé que se obtendría el mismo modelo con una sola variable regresora que es x10, ya que el algoritmo que programé para cuando solo queda una variable independiente. Intentaré con valores de k menores, especificamente con: 0.01, 0.005 y 0.0029.
+En el ejercicio anterior se vió que con 0.05 se obtenía un modelo con 1 variable sola. Como se busca minimizar el K de Theil, dicho coeficiente está castigando en demasía la incorporación de nuevas variables. No utilizo k mayores a 0.05 porque eso implicaría un mayor castigo que el actual, y por lo tanto se obtendría el mismo modelo con una sola variable regresora que es x10, ya que el algoritmo que programé se detiene cuando queda una sola variable independiente. Intentaré con valores de k menores, especificamente con: 0.01, 0.005 y 0.001.
 
-```{r step_Theil con k=0.01}
+```{r step_Theil 2}
 
 #k=0.01
 
@@ -304,10 +309,10 @@ modelo_con_step_Theil2 <- step_Theil(modelo_gaussiano_1,k=0.01)
 #Realizo el summary
 summary(modelo_con_step_Theil2)
 ```
-Se observa que aún bajando el k de 0.05 a 0.01, el modelo resultante sigue siendo de una sola variable, por lo que es necesario reducir aún más el castigo de la incorporación de las nuevas variables. A continuación se prueba con k=0.005.
+Se observa que, aún bajando el k de 0.05 a 0.01, el modelo resultante sigue siendo de una sola variable, por lo que es necesario reducir aún más el castigo de la incorporación de las nuevas variables. A continuación se prueba con k=0.005.
 
 
-```{r step_Theil con k=0.005}
+```{r step_Theil 3}
 
 #k=0.005
 
@@ -318,26 +323,29 @@ modelo_con_step_Theil3 <- step_Theil(modelo_gaussiano_1, k=0.005)
 summary(modelo_con_step_Theil3)
 ```
 
-Al reducir el k a 0.005 se castiga menos el agregar nuevas variables independientes, y se obtiene entonces un modelo con 3 variables regresoras: x5, x8 y x10. Son las mismas variables regresoras, y el mismo modelo que se obtuvo en el ejercicio 2 usando stepwise backwards con el criterio BIC.
+Al reducir el k a 0.005 se castiga menos el agregar nuevas variables independientes, y se obtiene entonces un modelo con 2 variables regresoras: x8 y x10, las cuales resultan significativas al 5%.
 
-Por último, pruebo bajar aún más el k, usando 0.0029
+Por último, pruebo bajar aún más el k, usando 0.001
 
-```{r step_Theil con k=0.029}
+```{r step_Theil 4}
 
-#k=0.0029
+#k=0.001
 
 #Especifico modelo
-modelo_con_step_Theil3 <- step_Theil(modelo_gaussiano_1,k=0.0029)
+modelo_con_step_Theil4 <- step_Theil(modelo_gaussiano_1,k=0.001)
 
 #Realizo el summary
-summary(modelo_con_step_Theil3)
+summary(modelo_con_step_Theil4)
 ```
 
-En este caso, al disminuir aún más el castigo por cada variable, se obtiene un modelo con todas las variables excepto una que es la x11.
+En este caso, al disminuir aún más el castigo por cada variable, se obtiene un modelo con 7 variables independientes: x1, x3, x5, x7, x8, x9, x10. Se observa también que, por efecto de la multicolinealidad, ninguna de las variables resulta significativa al 5%.
+
+Es posible continuar reduciendo el k, obtieniendo modelos con más variables.
+
 
 # 5) En función de los modelos anteriores, ¿cuál de ellos en el caso de que difieran recomendaríais?
 
-Si se pretende buscar un modelo con cierta capacidad predictiva pero a la vez que sea parsimonioso y no contenga un número elevado de variables innecesarias que no aporten una mejora significativa a la bondad de ajuste, entonces lo ideal sería elegir un modelo según parámetros que busquen un equilibrio entre los mismos. Eso es exactamente lo que se hizo en este ejercicio, y para ello se usaron dos parámetros: BIC y la K de Theil expuesta en la fórmula del ejercicio 3. Se observó que usando el stepwise backwards con el criterio BIC y el mismo algoritmo pero con la K de Theil con un k de 0.005 se obtiene el mismo modelo con 3 variables: rear axle ratio (x5),  overall length (x8) y Weight (x10). Teniendo estos dos criterios que llevan al mismo modelo, y en función de los datos proporcionados por el ejercicio, parecería que este es el mejor modelo que se podría recomendar, si biene existe espacio a mejorar, ya que el coeficiente de determinación es del 80,35%.
+Lo ideal sería elegir un modelo teniendo en cuenta el conocimiento del negocio, construyendo al mismo en función de las características del mismo, y analizando de si es posible obtener datos de otras variables que sean relevantes y no estén en el dataset.
 
-No obstante también sería importante analizar el modelo con conocimiento del negocio, ver si es posible obtener datos de otras variables que sean relavantes y no estén en el dataset, así como realizar cross validation del modelo.
-
+No obstante, cabe destacar que si se pretende buscar un modelo con cierta capacidad predictiva pero a la vez que sea parsimonioso y no contenga un número elevado de variables innecesarias que no aporten una mejora significativa a la bondad de ajuste, entonces lo ideal sería elegir un modelo según parámetros que busquen un equilibrio entre los mismos. Eso es exactamente lo que se hizo en este ejercicio, y para ello se usaron dos parámetros: BIC y la K de Theil expuesta en la fórmula del ejercicio 3. Se observó que usando el stepwise backwards con el criterio BIC se llegaba a un modelo con 3 variables: rear axle ratio (x5),  overall length (x8) y Weight (x10). En el caso del step usando la K de Theil, en función del k elegido se observó que se obtienen distintos modelos debido a que se modifica el castigo a la incorporación de nuevas variables. Específicamente, usando un k de 
+0.005 se llega a un modelo que incluye a dos variables que también están presentes en el modelo que se obtiene usando stepwise con BIC: overall length (x8) y Weight (x10). Teniendo en cuenta que con esos dos criterios (BIC y Theil) se llegan a modelos que incluyen esas dos variables, parecería que el modelo a usar las tiene que considerar. Por otra parte, si al modelo con x8 y x10 le agregamos x5, el coeficiente de determinación pasa de 77.16% a 80.35%, lo cual parece una mejora significativa al ajuste del modelo y solo se está agregando una variable. Por las razones expuestas, y en función de los datos proporcionados por el ejercicio, parecería que este modelo con 3 variables (x5, x8 y x10) es el mejor modelo que se podría recomendar, si bien existe espacio a mejorar (se podría mejorar la bondad de ajuste).
